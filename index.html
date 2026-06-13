@@ -1,0 +1,1083 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SMARTS101 — Interactive SMARTS Pattern Tester</title>
+    <script src="https://unpkg.com/@rdkit/rdkit/dist/RDKit_minimal.js"></script>
+    <style>
+        :root {
+            --bg:        #12131a;
+            --surface:   #1e2030;
+            --surface2:  #2a2d3e;
+            --border:    #3b3f5e;
+            --text:      #c0caf5;
+            --dim:       #565f89;
+            --accent:    #7aa2f7;
+            --purple:    #bb9af7;
+            --green:     #9ece6a;
+            --red:       #f7768e;
+            --yellow:    #e0af68;
+            --orange:    #ff9e64;
+            --cyan:      #7dcfff;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* ── Header ───────────────────────────────── */
+        header {
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            padding: 10px 18px;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            flex-shrink: 0;
+            z-index: 10;
+        }
+        .logo {
+            font-size: 1.3rem;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+            color: var(--accent);
+        }
+        .logo span { color: var(--purple); }
+        .tagline { color: var(--dim); font-size: 0.82rem; }
+
+        .rdkit-badge {
+            margin-left: auto;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.78rem;
+        }
+        .pill {
+            padding: 3px 10px;
+            border-radius: 20px;
+            font-weight: 700;
+            font-size: 0.75rem;
+        }
+        .pill.loading { background: rgba(224,175,104,.18); color: var(--yellow); }
+        .pill.ready   { background: rgba(158,206,106,.18); color: var(--green);  }
+        .pill.error   { background: rgba(247,118,142,.18); color: var(--red);    }
+
+        /* ── Main layout ──────────────────────────── */
+        main {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        /* ── Left panel ───────────────────────────── */
+        .left {
+            width: 360px;
+            flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid var(--border);
+            overflow: hidden;
+        }
+
+        .smarts-pane {
+            padding: 14px;
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+
+        .label {
+            font-size: 0.67rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: .12em;
+            color: var(--dim);
+            margin-bottom: 7px;
+        }
+
+        #smarts-input {
+            width: 100%;
+            background: var(--bg);
+            border: 1.5px solid var(--border);
+            border-radius: 6px;
+            color: var(--text);
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 1rem;
+            padding: 9px 11px;
+            outline: none;
+            transition: border-color .2s;
+        }
+        #smarts-input:focus   { border-color: var(--accent); }
+        #smarts-input.valid   { border-color: var(--green);  }
+        #smarts-input.invalid { border-color: var(--red);    }
+
+        .smarts-msg {
+            font-size: 0.78rem;
+            min-height: 17px;
+            margin-top: 5px;
+            color: var(--red);
+        }
+
+        .preview-box {
+            margin-top: 10px;
+            background: #fff;
+            border-radius: 6px;
+            min-height: 120px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            position: relative;
+        }
+        .preview-box svg { max-width: 100%; height: auto; display: block; }
+        .preview-hint { color: #bbb; font-size: 0.82rem; }
+
+        /* ── Help / reference ─────────────────────── */
+        .help-pane {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px 14px 16px;
+        }
+        .help-heading {
+            font-size: 0.7rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: .1em;
+            color: var(--dim);
+            margin-bottom: 10px;
+        }
+        .ref-section { margin-bottom: 14px; }
+        .ref-section-title {
+            font-size: 0.68rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: .08em;
+            color: var(--purple);
+            margin-bottom: 6px;
+            padding-bottom: 4px;
+            border-bottom: 1px solid var(--border);
+        }
+        .ref-items { display: flex; flex-wrap: wrap; gap: 4px; }
+        .ref-item {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 5px;
+            padding: 4px 8px;
+            cursor: pointer;
+            transition: border-color .15s, background .15s;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-width: 46px;
+            max-width: 130px;
+            user-select: none;
+        }
+        .ref-item:hover {
+            border-color: var(--accent);
+            background: rgba(122,162,247,.12);
+        }
+        .ref-item:active { transform: scale(.96); }
+        .ref-item .tok {
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 0.85rem;
+            color: var(--orange);
+            font-weight: 700;
+        }
+        .ref-item .dsc {
+            font-size: 0.62rem;
+            color: var(--dim);
+            text-align: center;
+            margin-top: 1px;
+        }
+
+        /* ── Right panel ──────────────────────────── */
+        .right {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .smiles-pane {
+            padding: 14px;
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+
+        /* Wrapper carries the border so the textarea can be transparent */
+        .smiles-wrap {
+            position: relative;
+            border: 1.5px solid var(--border);
+            border-radius: 6px;
+            background: var(--bg);
+            transition: border-color .2s;
+            /* No overflow:hidden — must allow the resize handle to be visible */
+        }
+        .smiles-wrap:focus-within { border-color: var(--accent); }
+
+        /* Coloured line overlay — absolutely fills the wrap, sits behind textarea */
+        #smiles-bg {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            pointer-events: none;
+            overflow: hidden;
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 0.88rem;
+            padding: 9px 0;      /* vertical padding matches textarea; no x-pad needed */
+            box-sizing: border-box;
+            border-radius: 6px;
+        }
+        .smiles-line {
+            /* Each coloured stripe must be exactly one text-line tall */
+            height: calc(0.88rem * 1.55);
+            padding: 0 2px;
+        }
+        .smiles-line.match   { background: rgba(158, 206, 106, 0.30); }
+        .smiles-line.nomatch { background: rgba(247, 118, 142, 0.28); }
+        .smiles-line.invalid { background: rgba(224, 175, 104, 0.30); }
+        .smiles-line.neutral { background: transparent; }
+
+        #smiles-input {
+            position: relative;
+            z-index: 1;
+            display: block;
+            width: 100%;
+            background: transparent;
+            border: none;
+            border-radius: 6px;
+            color: var(--text);
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 0.88rem;
+            padding: 9px 11px;
+            outline: none;
+            resize: vertical;
+            min-height: 90px;
+            line-height: 1.55;
+        }
+
+        .stats-row {
+            margin-top: 8px;
+            font-size: 0.79rem;
+            color: var(--dim);
+            display: flex;
+            gap: 14px;
+            flex-wrap: wrap;
+        }
+        .cnt-match    { color: var(--green);  font-weight: 700; }
+        .cnt-nomatch  { color: var(--red);    font-weight: 700; }
+        .cnt-invalid  { color: var(--dim);    font-weight: 700; }
+
+        /* ── Results grid ─────────────────────────── */
+        .results-pane {
+            flex: 1;
+            overflow-y: auto;
+            padding: 14px;
+        }
+        .results-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+            gap: 10px;
+        }
+        .empty-state {
+            grid-column: 1/-1;
+            text-align: center;
+            padding: 48px 24px;
+            color: var(--dim);
+        }
+        .empty-state h3 { color: var(--text); margin-bottom: 8px; font-size: 1rem; }
+        .empty-state p  { font-size: 0.85rem; line-height: 1.5; }
+
+        .mol-card {
+            background: var(--surface);
+            border: 1.5px solid var(--border);
+            border-radius: 8px;
+            overflow: hidden;
+            transition: border-color .2s, box-shadow .2s;
+        }
+        .mol-card:hover { box-shadow: 0 2px 12px rgba(0,0,0,.4); }
+        .mol-card.match    { border-color: var(--green); }
+        .mol-card.nomatch  { border-color: var(--red);   opacity: .75; }
+        .mol-card.invalid  { border-color: var(--border); opacity: .55; }
+
+        .mol-img {
+            position: relative;
+            background: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 140px;
+            padding: 4px;
+        }
+        .mol-img svg { max-width: 100%; height: auto; display: block; }
+        .mol-img .err-msg { font-size: 0.78rem; color: #aaa; }
+
+        .mol-footer {
+            padding: 7px 10px;
+            font-size: 0.73rem;
+            font-family: 'Consolas', 'Courier New', monospace;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            border-top: 1px solid var(--border);
+        }
+        .mol-smiles {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            color: var(--dim);
+            width: 100%;
+        }
+        .mol-footer-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            width: 100%;
+        }
+        .mol-footer-row .badge { margin-left: auto; }
+        .badge {
+            flex-shrink: 0;
+            font-size: 0.68rem;
+            font-weight: 800;
+            padding: 2px 6px;
+            border-radius: 3px;
+        }
+        .badge.match   { background: rgba(158,206,106,.2); color: var(--green); }
+        .badge.nomatch { background: rgba(247,118,142,.2); color: var(--red);   }
+        .badge.invalid { background: rgba(86,95,137,.2);   color: var(--dim);   }
+
+        /* ── Match navigation ─────────────────────── */
+        .nav-btn {
+            position: absolute;
+            bottom: 6px;
+            background: rgba(30,30,46,.72);
+            border: 1px solid rgba(255,255,255,.18);
+            border-radius: 50%;
+            color: #fff;
+            cursor: pointer;
+            font-size: 0.7rem;
+            width: 26px;
+            height: 26px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background .15s;
+            user-select: none;
+            z-index: 2;
+        }
+        .nav-btn[data-dir="-1"] { left: 6px; }
+        .nav-btn[data-dir="1"]  { right: 6px; }
+        .nav-btn:hover  { background: rgba(122,162,247,.55); }
+        .nav-btn:active { transform: scale(.9); }
+        .match-counter {
+            position: absolute;
+            bottom: 8px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 0.65rem;
+            color: #fff;
+            background: rgba(30,30,46,.65);
+            border-radius: 8px;
+            padding: 1px 6px;
+            font-variant-numeric: tabular-nums;
+            pointer-events: none;
+            z-index: 2;
+        }
+
+        /* ── Atom-map legend ──────────────────────── */
+        .map-legend {
+            padding: 5px 10px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+            border-top: 1px solid var(--border);
+            background: rgba(187,154,247,.06);
+        }
+        .map-legend-label {
+            width: 100%;
+            font-size: 0.6rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: .08em;
+            color: var(--dim);
+            margin-bottom: 2px;
+        }
+        .map-tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 3px;
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 0.72rem;
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 2px 6px;
+        }
+        .map-num {
+            color: var(--purple);
+            font-weight: 800;
+        }
+        .map-arrow { color: var(--dim); }
+        .map-sym   { color: var(--cyan); font-weight: 700; }
+
+        /* ── Scrollbars ───────────────────────────── */
+        ::-webkit-scrollbar { width: 5px; }
+        ::-webkit-scrollbar-track { background: var(--bg); }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--dim); }
+    </style>
+</head>
+<body>
+
+<header>
+    <div class="logo">SMARTS<span>101</span></div>
+    <div class="tagline">Interactive SMARTS pattern tester — powered by <a href="https://github.com/rdkit/rdkit-js" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none;border-bottom:1px solid var(--accent);">RDKit.js</a></div>
+    <div class="rdkit-badge">
+        <span id="rdkit-pill" class="pill loading" style="display:none"></span>
+    </div>
+</header>
+
+<main>
+    <!-- ── Left panel ── -->
+    <div class="left">
+        <div class="smarts-pane">
+            <div class="label">SMARTS Pattern</div>
+            <input id="smarts-input" type="text"
+                   placeholder="e.g. c1ccccc1 or [#6](=O)[OH]"
+                   autocomplete="off" spellcheck="false" />
+            <div class="smarts-msg" id="smarts-msg"></div>
+            <div class="preview-box" id="smarts-preview">
+                <span class="preview-hint">Pattern preview will appear here</span>
+            </div>
+        </div>
+
+        <div class="help-pane">
+            <div class="help-heading">SMARTS Reference — click any token to insert</div>
+            <div id="ref-container"></div>
+        </div>
+    </div>
+
+    <!-- ── Right panel ── -->
+    <div class="right">
+        <div class="smiles-pane">
+            <div class="label">Test Molecules — SMILES, one per line</div>
+            <div class="smiles-wrap">
+                <div id="smiles-bg" aria-hidden="true"></div>
+                <textarea id="smiles-input"
+                    placeholder="c1ccccc1&#10;CCO&#10;CC(=O)O&#10;c1ccc(N)cc1&#10;c1ccncc1"></textarea>
+            </div>
+            <div class="stats-row" id="stats-row">Enter SMILES above to see results</div>
+        </div>
+        <div class="results-pane">
+            <div class="results-grid" id="results-grid">
+                <div class="empty-state">
+                    <h3>No results yet</h3>
+                    <p>Enter a SMARTS pattern on the left and some SMILES above.<br>
+                       Matching substructures will be highlighted in the molecules.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</main>
+
+<script>
+// ─────────────────────────────────────────────────────────────
+// SMARTS reference data
+// ─────────────────────────────────────────────────────────────
+const REF = [
+    { cat: "Organic Subset Atoms", items: [
+        { tok: "*",    dsc: "Any atom" },
+        { tok: "B",    dsc: "Boron (aliphatic)" },
+        { tok: "C",    dsc: "Carbon (aliphatic)" },
+        { tok: "c",    dsc: "Carbon (aromatic)" },
+        { tok: "N",    dsc: "Nitrogen (aliphatic)" },
+        { tok: "n",    dsc: "Nitrogen (aromatic)" },
+        { tok: "O",    dsc: "Oxygen (aliphatic)" },
+        { tok: "o",    dsc: "Oxygen (aromatic)" },
+        { tok: "S",    dsc: "Sulfur (aliphatic)" },
+        { tok: "s",    dsc: "Sulfur (aromatic)" },
+        { tok: "P",    dsc: "Phosphorus (aliphatic)" },
+        { tok: "p",    dsc: "Phosphorus (aromatic)" },
+        { tok: "F",    dsc: "Fluorine" },
+        { tok: "Cl",   dsc: "Chlorine" },
+        { tok: "Br",   dsc: "Bromine" },
+        { tok: "I",    dsc: "Iodine" },
+        { tok: "a",    dsc: "Any aromatic atom" },
+        { tok: "A",    dsc: "Any aliphatic atom" },
+    ]},
+    { cat: "Atomic Number", items: [
+        { tok: "[#1]",  dsc: "Hydrogen (Z=1)" },
+        { tok: "[#6]",  dsc: "Carbon (Z=6)" },
+        { tok: "[#7]",  dsc: "Nitrogen (Z=7)" },
+        { tok: "[#8]",  dsc: "Oxygen (Z=8)" },
+        { tok: "[#9]",  dsc: "Fluorine (Z=9)" },
+        { tok: "[#15]", dsc: "Phosphorus (Z=15)" },
+        { tok: "[#16]", dsc: "Sulfur (Z=16)" },
+        { tok: "[#17]", dsc: "Chlorine (Z=17)" },
+        { tok: "[#35]", dsc: "Bromine (Z=35)" },
+        { tok: "[#53]", dsc: "Iodine (Z=53)" },
+    ]},
+    { cat: "Hydrogen Count (on atom)", items: [
+        { tok: "[H0]", dsc: "No H attached" },
+        { tok: "[H1]", dsc: "Exactly 1 H" },
+        { tok: "[H2]", dsc: "Exactly 2 H" },
+        { tok: "[H3]", dsc: "Exactly 3 H" },
+        { tok: "[h1]", dsc: "≥1 implicit H" },
+        { tok: "[h2]", dsc: "≥2 implicit H" },
+    ]},
+    { cat: "Formal Charge", items: [
+        { tok: "[+]",  dsc: "Any positive charge" },
+        { tok: "[-]",  dsc: "Any negative charge" },
+        { tok: "[+0]", dsc: "Neutral" },
+        { tok: "[+1]", dsc: "Charge +1" },
+        { tok: "[+2]", dsc: "Charge +2" },
+        { tok: "[-1]", dsc: "Charge -1" },
+        { tok: "[-2]", dsc: "Charge -2" },
+    ]},
+    { cat: "Degree & Valence", items: [
+        { tok: "[D1]", dsc: "Degree 1 (terminal)" },
+        { tok: "[D2]", dsc: "Degree 2" },
+        { tok: "[D3]", dsc: "Degree 3" },
+        { tok: "[D4]", dsc: "Degree 4" },
+        { tok: "[v2]", dsc: "Valence 2" },
+        { tok: "[v3]", dsc: "Valence 3" },
+        { tok: "[v4]", dsc: "Valence 4" },
+        { tok: "[X2]", dsc: "Connectivity 2 (incl H)" },
+        { tok: "[X3]", dsc: "Connectivity 3" },
+        { tok: "[X4]", dsc: "Connectivity 4" },
+    ]},
+    { cat: "Ring Membership", items: [
+        { tok: "[R]",  dsc: "In any ring" },
+        { tok: "[R0]", dsc: "Not in a ring" },
+        { tok: "[R1]", dsc: "In exactly 1 ring" },
+        { tok: "[R2]", dsc: "In 2 rings (fused)" },
+        { tok: "[r3]", dsc: "In 3-membered ring" },
+        { tok: "[r4]", dsc: "In 4-membered ring" },
+        { tok: "[r5]", dsc: "In 5-membered ring" },
+        { tok: "[r6]", dsc: "In 6-membered ring" },
+        { tok: "[x2]", dsc: "Ring bond count 2" },
+        { tok: "[x3]", dsc: "Ring bond count 3" },
+    ]},
+    { cat: "Bond Types", items: [
+        { tok: "-",   dsc: "Single bond" },
+        { tok: "=",   dsc: "Double bond" },
+        { tok: "#",   dsc: "Triple bond" },
+        { tok: ":",   dsc: "Aromatic bond" },
+        { tok: "~",   dsc: "Any bond" },
+        { tok: "@",   dsc: "Any ring bond" },
+        { tok: "/",   dsc: "Up (E/Z stereo)" },
+        { tok: "\\",  dsc: "Down (E/Z stereo)" },
+        { tok: "!-",  dsc: "NOT single" },
+        { tok: "!~",  dsc: "NOT any (impossible)" },
+    ]},
+    { cat: "Logical Operators (inside [ ])", items: [
+        { tok: ",",  dsc: "OR  (low precedence)" },
+        { tok: ";",  dsc: "AND (low precedence)" },
+        { tok: "&",  dsc: "AND (high precedence)" },
+        { tok: "!",  dsc: "NOT" },
+    ]},
+    { cat: "Structural", items: [
+        { tok: "()",  dsc: "Branch" },
+        { tok: ".",   dsc: "Disconnected fragment" },
+        { tok: "1",   dsc: "Ring-closure label 1" },
+        { tok: "2",   dsc: "Ring-closure label 2" },
+        { tok: "%10", dsc: "Ring-closure ≥10" },
+    ]},
+    { cat: "Common Functional Groups", items: [
+        { tok: "[OH]",           dsc: "Alcohol / phenol" },
+        { tok: "[NH2]",          dsc: "Primary amine" },
+        { tok: "[NH]",           dsc: "Secondary amine" },
+        { tok: "C(=O)O",         dsc: "Carboxylic acid" },
+        { tok: "C(=O)[OH]",      dsc: "Carboxylic acid (explicit)" },
+        { tok: "C(=O)[NH2]",     dsc: "Primary amide" },
+        { tok: "C(=O)[NH]",      dsc: "Secondary amide" },
+        { tok: "C(=O)N",         dsc: "Amide (any N)" },
+        { tok: "[CX3](=O)",      dsc: "Carbonyl" },
+        { tok: "S(=O)(=O)",      dsc: "Sulfonyl" },
+        { tok: "S(=O)(=O)[OH]",  dsc: "Sulfonic acid" },
+        { tok: "S(=O)(=O)N",     dsc: "Sulfonamide" },
+        { tok: "P(=O)(O)O",      dsc: "Phosphate" },
+        { tok: "[F,Cl,Br,I]",    dsc: "Any halogen" },
+        { tok: "[CX4]",          dsc: "sp3 carbon" },
+        { tok: "[CX3]",          dsc: "sp2 carbon" },
+        { tok: "[CX2]",          dsc: "sp carbon (alkyne)" },
+    ]},
+    { cat: "Atom Map Labels", items: [
+        { tok: "[*:1]",  dsc: "Any atom, label :1" },
+        { tok: "[C:1]",  dsc: "Carbon, label :1" },
+        { tok: "[N:2]",  dsc: "Nitrogen, label :2" },
+        { tok: "[O:3]",  dsc: "Oxygen, label :3" },
+        { tok: "[#6:1]", dsc: "C by atomic num, :1" },
+        { tok: "[#7:2]", dsc: "N by atomic num, :2" },
+        { tok: "[#8:3]", dsc: "O by atomic num, :3" },
+    ]},
+    { cat: "Aromatic Rings", items: [
+        { tok: "c1ccccc1",           dsc: "Benzene" },
+        { tok: "c1ccncc1",           dsc: "Pyridine" },
+        { tok: "c1ccoc1",            dsc: "Furan" },
+        { tok: "c1ccsc1",            dsc: "Thiophene" },
+        { tok: "c1cc[nH]c1",         dsc: "Pyrrole" },
+        { tok: "c1cnc[nH]1",         dsc: "Imidazole" },
+        { tok: "c1ncnc1",            dsc: "Pyrimidine-like" },
+        { tok: "c1ccc2ccccc2c1",     dsc: "Naphthalene" },
+        { tok: "c1ccc2[nH]ccc2c1",   dsc: "Indole-like" },
+    ]},
+];
+
+// ─────────────────────────────────────────────────────────────
+// Build reference panel
+// ─────────────────────────────────────────────────────────────
+function esc(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function buildRef() {
+    const wrap = document.getElementById('ref-container');
+    REF.forEach(section => {
+        const div = document.createElement('div');
+        div.className = 'ref-section';
+
+        const title = document.createElement('div');
+        title.className = 'ref-section-title';
+        title.textContent = section.cat;
+        div.appendChild(title);
+
+        const items = document.createElement('div');
+        items.className = 'ref-items';
+        section.items.forEach(it => {
+            const el = document.createElement('div');
+            el.className = 'ref-item';
+            el.title = it.dsc;
+            el.innerHTML = `<span class="tok">${esc(it.tok)}</span><span class="dsc">${esc(it.dsc)}</span>`;
+            el.addEventListener('click', () => insertToken(it.tok));
+            items.appendChild(el);
+        });
+        div.appendChild(items);
+        wrap.appendChild(div);
+    });
+}
+
+function insertToken(tok) {
+    const inp = document.getElementById('smarts-input');
+    const s = inp.selectionStart, e = inp.selectionEnd;
+    const v = inp.value;
+    let insert = tok, cursor;
+    if (tok === '()') { insert = '()'; cursor = s + 1; }
+    else { cursor = s + tok.length; }
+    inp.value = v.slice(0, s) + insert + v.slice(e);
+    inp.selectionStart = inp.selectionEnd = cursor;
+    inp.focus();
+    inp.dispatchEvent(new Event('input'));
+}
+
+// ─────────────────────────────────────────────────────────────
+// Parse atom map labels from a SMARTS string
+// Returns { queryAtomIndex: mapNumber } for every labeled atom
+// ─────────────────────────────────────────────────────────────
+function parseSmartsMaps(smarts) {
+    const maps = {};
+    let qi = 0;        // query atom index
+    let i  = 0;
+    const n = smarts.length;
+    let prevAtom = false;   // true right after an atom token (for ring-closure digits)
+
+    while (i < n) {
+        const c = smarts[i];
+
+        if (c === '[') {
+            // Bracket atom — scan to matching ] respecting nesting ($([...]) )
+            let depth = 1, j = i + 1;
+            while (j < n && depth > 0) {
+                if (smarts[j] === '[') depth++;
+                else if (smarts[j] === ']') depth--;
+                j++;
+            }
+            const inner = smarts.slice(i + 1, j - 1);
+            // Atom map :N appears at the very end of bracket content
+            const m = inner.match(/:(\d+)\s*$/);
+            if (m) maps[qi] = parseInt(m[1]);
+            qi++;
+            prevAtom = true;
+            i = j;
+
+        } else if (c === '%') {
+            // Ring closure %NN… — skip digits
+            i++;
+            while (i < n && /\d/.test(smarts[i])) i++;
+
+        } else if (/\d/.test(c) && prevAtom) {
+            // Single-digit ring closure
+            i++;
+
+        } else if (c === '(' || c === ')') {
+            i++;   // prevAtom unchanged — ring closures can follow )
+
+        } else if (c === '.') {
+            prevAtom = false; i++;
+
+        } else if ('-=#~:/\\@!&,;'.includes(c)) {
+            prevAtom = false; i++;
+
+        } else if (c === '*') {
+            qi++; prevAtom = true; i++;
+
+        } else if (c === 'B') {
+            if (i + 1 < n && smarts[i + 1] === 'r') i += 2; else i++;
+            qi++; prevAtom = true;
+
+        } else if (c === 'C') {
+            if (i + 1 < n && smarts[i + 1] === 'l') i += 2; else i++;
+            qi++; prevAtom = true;
+
+        } else if ('cnospb'.includes(c)) {
+            // Aromatic-subset atoms (lowercase)
+            qi++; prevAtom = true; i++;
+
+        } else if ('NOFPSIAa'.includes(c)) {
+            // Aliphatic-subset atoms + wildcard A/a
+            qi++; prevAtom = true; i++;
+
+        } else {
+            i++;
+        }
+    }
+    return maps;
+}
+
+// ─────────────────────────────────────────────────────────────
+// Get element symbols for every atom in a molecule
+// Parses the V2000 MOL block atom table
+// ─────────────────────────────────────────────────────────────
+function getMolAtomSymbols(mol) {
+    try {
+        const lines  = mol.get_molblock().split('\n');
+        const natoms = parseInt(lines[3].trim().split(/\s+/)[0]);
+        const syms   = [];
+        for (let i = 0; i < natoms; i++) {
+            // V2000 atom line: 10+10+10 char coords, 1 space, 3 char element
+            syms.push(lines[4 + i].slice(31, 34).trim());
+        }
+        return syms;
+    } catch (_) {
+        return [];
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
+// Per-render match store: cardMatchData[cardIdx] = { svgs, legends }
+// Reset on every refreshResults() call so stale card indices don't linger
+// ─────────────────────────────────────────────────────────────
+let cardMatchData = [];
+
+// ─────────────────────────────────────────────────────────────
+// RDKit init
+// ─────────────────────────────────────────────────────────────
+let RDKit = null;
+
+window.initRDKitModule().then(rdk => {
+    RDKit = rdk;
+    runUpdate();
+}).catch(err => {
+    console.error(err);
+    const pill = document.getElementById('rdkit-pill');
+    pill.style.display = '';   // unhide so the error is actually visible
+    pill.textContent = 'RDKit Failed';
+    pill.className = 'pill error';
+});
+
+// ─────────────────────────────────────────────────────────────
+// Core update logic
+// ─────────────────────────────────────────────────────────────
+let timer = null;
+function scheduleUpdate() {
+    clearTimeout(timer);
+    timer = setTimeout(runUpdate, 280);
+}
+
+function runUpdate() {
+    if (!RDKit) return;
+    refreshSmartsPreview();
+    refreshResults();
+}
+
+function refreshSmartsPreview() {
+    const smarts = document.getElementById('smarts-input').value.trim();
+    const previewEl = document.getElementById('smarts-preview');
+    const msgEl = document.getElementById('smarts-msg');
+    const inputEl = document.getElementById('smarts-input');
+
+    if (!smarts) {
+        previewEl.innerHTML = '<span class="preview-hint">Pattern preview will appear here</span>';
+        msgEl.textContent = '';
+        inputEl.className = '';
+        return;
+    }
+
+    let qmol;
+    try {
+        qmol = RDKit.get_qmol(smarts);
+        if (qmol && qmol.is_valid()) {
+            previewEl.innerHTML = qmol.get_svg(310, 140);
+            msgEl.textContent = '';
+            inputEl.className = 'valid';
+        } else {
+            throw new Error('invalid');
+        }
+    } catch (_) {
+        previewEl.innerHTML = '<span class="preview-hint" style="color:#f7768e">Invalid SMARTS pattern</span>';
+        msgEl.textContent = 'Invalid SMARTS — check syntax and try again';
+        inputEl.className = 'invalid';
+    } finally {
+        if (qmol) qmol.delete();
+    }
+}
+
+function refreshResults() {
+    const smarts   = document.getElementById('smarts-input').value.trim();
+    const rawText  = document.getElementById('smiles-input').value;
+    const gridEl   = document.getElementById('results-grid');
+    const statsEl  = document.getElementById('stats-row');
+
+    cardMatchData = [];   // clear stale data from previous render
+
+    const rawLines = rawText.split('\n');
+
+    // Per-raw-line status used by the background colour overlay
+    const lineStatuses = rawLines.map(l => {
+        const t = l.trim();
+        return (!t || t.startsWith('//') || t.startsWith('#')) ? 'neutral' : null;
+    });
+
+    // Active (non-blank, non-comment) lines with their original index
+    const activeLines = [];
+    rawLines.forEach((l, i) => {
+        const t = l.trim();
+        if (t && !t.startsWith('//') && !t.startsWith('#')) activeLines.push({ smi: t, i });
+    });
+
+    if (!activeLines.length) {
+        gridEl.innerHTML = `
+          <div class="empty-state">
+            <h3>No SMILES entered</h3>
+            <p>Type SMILES strings above, one per line, to see them rendered here.</p>
+          </div>`;
+        statsEl.innerHTML = 'Enter SMILES above to see results';
+        updateSmilesBg(lineStatuses);
+        return;
+    }
+
+    // Parse query mol
+    let qmol = null;
+    if (smarts) {
+        try {
+            const q = RDKit.get_qmol(smarts);
+            if (q && q.is_valid()) qmol = q;
+            else if (q) q.delete();
+        } catch (_) {}
+    }
+
+    // Parse atom map labels once for all molecules
+    const atomMaps     = smarts ? parseSmartsMaps(smarts) : {};
+    const hasMapLabels = Object.keys(atomMaps).length > 0;
+
+    let nMatch = 0, nNo = 0, nInvalid = 0;
+    const cards = [];
+
+    activeLines.forEach(({ smi, i }) => {
+        let mol;
+        try {
+            mol = RDKit.get_mol(smi);
+            if (!mol || !mol.is_valid()) throw new Error('bad smiles');
+
+            if (!qmol) {
+                lineStatuses[i] = 'neutral';
+                cards.push(makeCard(smi, mol.get_svg(200, 150), 'nomatch', '—'));
+                nNo++;
+                return;
+            }
+
+            const allMatches = JSON.parse(mol.get_substruct_matches(qmol));
+
+            if (allMatches && allMatches.length > 0) {
+                nMatch++;
+                lineStatuses[i] = 'match';
+
+                const symbols = hasMapLabels ? getMolAtomSymbols(mol) : [];
+
+                // Pre-render one SVG + legend per match occurrence
+                const matchSvgs    = [];
+                const matchLegends = [];
+
+                allMatches.forEach(match => {
+                    let drawDetails = match;
+                    let legend      = null;
+
+                    if (hasMapLabels) {
+                        const atomNotes   = {};
+                        const legendItems = [];
+
+                        Object.entries(atomMaps).forEach(([qiStr, mapNum]) => {
+                            const qi         = parseInt(qiStr);
+                            const molAtomIdx = match.atoms[qi];
+                            if (molAtomIdx === undefined) return;
+                            atomNotes[molAtomIdx] = `:${mapNum}`;
+                            legendItems.push({ mapNum, sym: symbols[molAtomIdx] || '?', molAtomIdx });
+                        });
+
+                        legendItems.sort((a, b) => a.mapNum - b.mapNum);
+                        drawDetails = { ...match, atomNotes };
+
+                        if (legendItems.length) {
+                            legend = legendItems.map(it =>
+                                `<span class="map-tag">` +
+                                `<span class="map-num">:${it.mapNum}</span>` +
+                                `<span class="map-arrow">→</span>` +
+                                `<span class="map-sym">${esc(it.sym)}</span>` +
+                                `</span>`
+                            ).join('');
+                        }
+                    }
+
+                    matchSvgs.push(mol.get_svg_with_highlights(JSON.stringify(drawDetails)));
+                    matchLegends.push(legend);
+                });
+
+                const cardIdx  = cardMatchData.length;
+                cardMatchData.push({ svgs: matchSvgs, legends: matchLegends });
+
+                const nSites   = allMatches.length;
+                const nAtoms   = allMatches[0].atoms.length;
+                const badgeTxt = nSites > 1
+                    ? `${nSites}× · ${nAtoms} atom${nAtoms !== 1 ? 's' : ''}`
+                    : `Match · ${nAtoms} atom${nAtoms !== 1 ? 's' : ''}`;
+
+                cards.push(makeMatchCard(smi, matchSvgs[0], matchLegends[0], nSites, badgeTxt, cardIdx));
+            } else {
+                nNo++;
+                lineStatuses[i] = 'nomatch';
+                cards.push(makeCard(smi, mol.get_svg(200, 150), 'nomatch', 'No match'));
+            }
+        } catch (_) {
+            nInvalid++;
+            lineStatuses[i] = 'invalid';   // amber — distinct from red no-match
+            cards.push(makeCard(smi, null, 'invalid', 'Invalid SMILES'));
+        } finally {
+            if (mol) mol.delete();
+        }
+    });
+
+    if (qmol) qmol.delete();
+
+    gridEl.innerHTML = cards.join('');
+    updateSmilesBg(lineStatuses);
+
+    const total = activeLines.length;
+    let html = `${total} molecule${total !== 1 ? 's' : ''}`;
+    if (smarts) {
+        html += ` — <span class="cnt-match">${nMatch} match${nMatch !== 1 ? 'es' : ''}</span>`
+              + ` · <span class="cnt-nomatch">${nNo} no match</span>`;
+        if (nInvalid) html += ` · <span class="cnt-invalid">${nInvalid} invalid</span>`;
+    }
+    statsEl.innerHTML = html;
+}
+
+function updateSmilesBg(lineStatuses) {
+    const bg       = document.getElementById('smiles-bg');
+    const textarea = document.getElementById('smiles-input');
+    bg.innerHTML   = lineStatuses.map(s => `<div class="smiles-line ${s ?? 'neutral'}"></div>`).join('');
+    bg.scrollTop   = textarea.scrollTop;
+}
+
+function makeCard(smiles, svg, cls, badge) {
+    const imgContent = svg ? svg : '<span class="err-msg">Cannot render</span>';
+    return `
+    <div class="mol-card ${cls}">
+      <div class="mol-img">${imgContent}</div>
+      <div class="mol-footer">
+        <div class="mol-footer-row">
+          <span class="mol-smiles" title="${esc(smiles)}">${esc(smiles)}</span>
+          <span class="badge ${cls}">${esc(badge)}</span>
+        </div>
+      </div>
+    </div>`;
+}
+
+function makeMatchCard(smiles, svg, legend, nSites, badgeTxt, cardIdx) {
+    const legendBlock = legend
+        ? `<div class="map-legend"><span class="map-legend-label">Atom map labels</span>${legend}</div>`
+        : '';
+    const nav = nSites > 1 ? `
+          <button class="nav-btn" data-card="${cardIdx}" data-dir="-1">&#9664;</button>
+          <span class="match-counter" id="mc-${cardIdx}">1 / ${nSites}</span>
+          <button class="nav-btn" data-card="${cardIdx}" data-dir="1">&#9654;</button>` : '';
+    return `
+    <div class="mol-card match" data-card-idx="${cardIdx}" data-current="0">
+      <div class="mol-img" id="mi-${cardIdx}"><div class="mol-svg" id="ms-${cardIdx}">${svg}</div>${nav}</div>
+      <div id="ml-${cardIdx}">${legendBlock}</div>
+      <div class="mol-footer">
+        <div class="mol-footer-row">
+          <span class="mol-smiles" title="${esc(smiles)}">${esc(smiles)}</span>
+          <span class="badge match">${esc(badgeTxt)}</span>
+        </div>
+      </div>
+    </div>`;
+}
+
+// ─────────────────────────────────────────────────────────────
+// Events & init
+// ─────────────────────────────────────────────────────────────
+document.getElementById('smarts-input').addEventListener('input', scheduleUpdate);
+document.getElementById('smiles-input').addEventListener('input', scheduleUpdate);
+
+document.getElementById('results-grid').addEventListener('click', e => {
+    const btn = e.target.closest('.nav-btn');
+    if (!btn) return;
+
+    const cardIdx = parseInt(btn.dataset.card);
+    const dir     = parseInt(btn.dataset.dir);
+    const data    = cardMatchData[cardIdx];
+    const card    = document.querySelector(`[data-card-idx="${cardIdx}"]`);
+    if (!data || !card) return;
+
+    const n       = data.svgs.length;
+    const current = ((parseInt(card.dataset.current) + dir) + n) % n;
+    card.dataset.current = current;
+
+    document.getElementById(`ms-${cardIdx}`).innerHTML = data.svgs[current];
+
+    const legend = data.legends[current];
+    document.getElementById(`ml-${cardIdx}`).innerHTML = legend
+        ? `<div class="map-legend"><span class="map-legend-label">Atom map labels</span>${legend}</div>`
+        : '';
+
+    document.getElementById(`mc-${cardIdx}`).textContent = `${current + 1} / ${n}`;
+});
+document.getElementById('smiles-input').addEventListener('scroll', () => {
+    const ta = document.getElementById('smiles-input');
+    document.getElementById('smiles-bg').scrollTop = ta.scrollTop;
+});
+
+buildRef();
+
+// Pre-populate with a useful example (map labels highlight the carbonyl C and O)
+document.getElementById('smarts-input').value = '[C:1](=O)[OH:2]';
+document.getElementById('smiles-input').value = [
+    'CC(=O)O',               // acetic acid
+    'OC(=O)c1ccccc1',        // benzoic acid
+    'CC(C)(C)C(=O)O',        // pivalic acid
+    'OC(=O)c1ccc(O)cc1',     // 4-hydroxybenzoic acid
+    'c1ccccc1',              // benzene — no match
+    'CCO',                   // ethanol — no match
+    'CC(=O)N',               // acetamide — no match
+    'c1ccncc1',              // pyridine — no match
+    'c1cc[nH]c1',            // pyrrole — no match
+].join('\n');
+</script>
+</body>
+</html>
